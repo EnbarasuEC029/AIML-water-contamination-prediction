@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaWatch — Water Quality Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg0: #080d12;
+    --bg1: #0d1520;
+    --bg2: #111d2e;
+    --bg3: #162335;
+    --border: rgba(0,180,255,0.12);
+    --accent: #00b4ff;
+    --accent2: #00ffcc;
+    --mono: 'Share Tech Mono', monospace;
+    --body: 'Barlow', sans-serif;
+    --safe-color: #00e5a0;
+    --unsafe-color: #ff4060;
+    --warn-color: #ffaa00;
+    --fair-color: #ff8800;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg0); color: #c8dde8; font-family: var(--body); overflow-x: hidden; }
+
+  body::before {
+    content:'';
+    position:fixed;inset:0;
+    background-image:
+      linear-gradient(rgba(0,180,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,180,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events:none;z-index:0;
+  }
+
+  .wrap { position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:24px 20px; }
+
+  /* HEADER */
+  header {
+    display:flex;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--border);
+    padding-bottom:16px;margin-bottom:28px;
+  }
+  .logo { display:flex;align-items:center;gap:12px; }
+  .logo-icon {
+    width:40px;height:40px;border-radius:50%;
+    background: conic-gradient(var(--accent), var(--accent2), var(--accent));
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;animation: spin 8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .logo h1 { font-size:22px;font-weight:700;letter-spacing:2px;color:#fff; }
+  .logo p  { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:1px;margin-top:2px; }
+
+  .header-right { display:flex;gap:16px;align-items:center;flex-wrap:wrap; }
+  .badge {
+    font-family:var(--mono);font-size:11px;padding:5px 10px;
+    border-radius:4px;border:1px solid;letter-spacing:1px;
+  }
+  .badge.live  { border-color:var(--safe-color);color:var(--safe-color); }
+  .badge.demo  { border-color:var(--warn-color);color:var(--warn-color); }
+  .badge.acc   { border-color:var(--border);color:#7a9ab0; }
+
+  /* STATUS BANNER */
+  #status-banner {
+    border-radius:10px;padding:18px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:24px;
+    transition: background 0.5s, border-color 0.5s;
+    border:1px solid;
+  }
+  #status-banner.safe   { background:rgba(0,229,160,0.07);border-color:rgba(0,229,160,0.3); }
+  #status-banner.unsafe { background:rgba(255,64,96,0.07);border-color:rgba(255,64,96,0.3); }
+  #status-banner.fair   { background:rgba(255,136,0,0.07);border-color:rgba(255,136,0,0.3); }
+  #status-banner.unknown{ background:rgba(0,180,255,0.05);border-color:var(--border); }
+
+  .status-left { display:flex;align-items:center;gap:16px; }
+  .status-dot  { width:14px;height:14px;border-radius:50%;flex-shrink:0; }
+  .status-dot.pulse { animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(1.2)} }
+
+  #status-label { font-size:20px;font-weight:700;letter-spacing:1px; }
+  #status-sub   { font-size:13px;color:#7a9ab0;margin-top:3px;font-family:var(--mono); }
+  #status-time  { font-family:var(--mono);font-size:12px;color:#7a9ab0;text-align:right; }
+
+  /* SENSOR CARDS */
+  .cards { display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:24px; }
+
+  .card {
+    background:var(--bg2);border:1px solid var(--border);
+    border-radius:10px;padding:20px 22px;
+    position:relative;overflow:hidden;
+    transition:border-color 0.4s;
+  }
+  .card::before {
+    content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--accent),transparent);
+    opacity:0.5;
+  }
+  .card-label { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px; }
+  .card-value { font-size:42px;font-family:var(--mono);font-weight:400;line-height:1;transition:color 0.4s; }
+  .card-unit  { font-size:14px;color:#7a9ab0;margin-left:6px; }
+  .card-range { font-size:11px;color:#4a6070;margin-top:8px;font-family:var(--mono); }
+  .card-bar   { height:4px;background:var(--bg3);border-radius:2px;margin-top:12px;overflow:hidden; }
+  .card-bar-fill { height:100%;border-radius:2px;transition:width 0.6s ease, background 0.4s; }
+
+  /* QUALITY + CONFIDENCE */
+  .mid-row { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px; }
+  @media(max-width:700px){ .mid-row{ grid-template-columns:1fr; } }
+
+  .quality-card {
+    background:var(--bg2);border:1px solid var(--border);
+    border-radius:10px;padding:20px 22px;
+  }
+  .quality-card h3 { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:2px;margin-bottom:14px; }
+  #quality-label {
+    font-size:32px;font-weight:700;letter-spacing:1px;
+    transition:color 0.4s;
+  }
+  .prob-bars { margin-top:16px;display:flex;flex-direction:column;gap:8px; }
+  .prob-row  { display:flex;align-items:center;gap:10px; }
+  .prob-name { font-family:var(--mono);font-size:11px;width:72px;color:#7a9ab0; }
+  .prob-track{ flex:1;background:var(--bg3);border-radius:2px;height:6px;overflow:hidden; }
+  .prob-fill { height:100%;border-radius:2px;transition:width 0.6s ease; }
+  .prob-num  { font-family:var(--mono);font-size:11px;width:40px;text-align:right;color:#7a9ab0; }
+
+  .conf-card {
+    background:var(--bg2);border:1px solid var(--border);
+    border-radius:10px;padding:20px 22px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  }
+  .conf-card h3 { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:2px;align-self:flex-start; }
+  #conf-value { font-size:64px;font-family:var(--mono);line-height:1; }
+  #conf-pct   { font-size:20px;color:#7a9ab0; }
+  #conf-label { font-size:12px;color:#4a6070;font-family:var(--mono); }
+
+  /* CHARTS */
+  .charts { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px; }
+  @media(max-width:900px){ .charts{ grid-template-columns:1fr; } }
+
+  .chart-card {
+    background:var(--bg2);border:1px solid var(--border);
+    border-radius:10px;padding:18px 20px;
+  }
+  .chart-card h3 { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:2px;margin-bottom:14px; }
+  .chart-wrap { position:relative;height:220px; }
+
+  /* HISTORY TABLE */
+  .table-card {
+    background:var(--bg2);border:1px solid var(--border);
+    border-radius:10px;padding:18px 20px;margin-bottom:24px;
+  }
+  .table-card h3 { font-size:11px;font-family:var(--mono);color:var(--accent);letter-spacing:2px;margin-bottom:14px; }
+  .table-scroll { overflow-x:auto; }
+  table { width:100%;border-collapse:collapse; }
+  th {
+    font-family:var(--mono);font-size:11px;letter-spacing:1px;
+    color:#4a6070;text-transform:uppercase;
+    padding:8px 14px;border-bottom:1px solid var(--border);
+    text-align:left;
+  }
+  td { padding:9px 14px;font-family:var(--mono);font-size:12px;border-bottom:1px solid rgba(0,180,255,0.05); }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:rgba(0,180,255,0.03); }
+  .tag {
+    display:inline-block;padding:2px 8px;border-radius:3px;
+    font-size:10px;letter-spacing:1px;font-weight:600;
+  }
+  .tag.Excellent { background:rgba(0,229,160,0.15);color:#00e5a0; }
+  .tag.Good      { background:rgba(0,180,255,0.15);color:#00b4ff; }
+  .tag.Fair      { background:rgba(255,136,0,0.15);color:#ff8800; }
+  .tag.Poor      { background:rgba(255,64,96,0.15);color:#ff4060; }
+  .safe-tick   { color:var(--safe-color); }
+  .unsafe-tick { color:var(--unsafe-color); }
+
+  /* CONNECTION STATUS indicator (live-updating) */
+  #conn-badge { transition: color 0.4s, border-color 0.4s; }
+
+  footer {
+    text-align:center;font-family:var(--mono);font-size:11px;
+    color:#2a4050;padding:16px 0;
+    border-top:1px solid var(--border);letter-spacing:1px;
+  }
+
+  .skeleton { animation: shimmer 1.5s ease infinite; }
+  @keyframes shimmer { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">💧</div>
+      <div>
+        <h1>AQUAWATCH</h1>
+        <p>REAL-TIME WATER QUALITY MONITOR</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <!-- ✅ FIX: Double curly braces for Jinja2 template variables -->
+      <span class="badge acc">RF MODEL · {{ accuracy }}% ACC</span>
+      <span class="badge {{ 'live' if firebase else 'demo' }}" id="conn-badge">
+        {{ '● FIREBASE LIVE' if firebase else '⚠ DEMO MODE' }}
+      </span>
+      <span class="badge acc" id="poll-badge" style="font-size:10px">POLLING EVERY {{ poll_interval }}s</span>
+    </div>
+  </header>
+
+  <!-- STATUS BANNER -->
+  <div id="status-banner" class="unknown">
+    <div class="status-left">
+      <div class="status-dot pulse" id="status-dot" style="background:#7a9ab0"></div>
+      <div>
+        <div id="status-label">Connecting…</div>
+        <div id="status-sub">Waiting for sensor data</div>
+      </div>
+    </div>
+    <div id="status-time">--:--:--</div>
+  </div>
+
+  <!-- SENSOR CARDS -->
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">TDS Level</div>
+      <div><span class="card-value skeleton" id="tds-val">--</span><span class="card-unit">ppm</span></div>
+      <div class="card-range" id="tds-range">Target: &lt; 500 ppm (WHO standard)</div>
+      <div class="card-bar"><div class="card-bar-fill" id="tds-bar" style="width:0%;background:var(--accent)"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Turbidity</div>
+      <div><span class="card-value skeleton" id="turb-val">--</span><span class="card-unit">NTU</span></div>
+      <div class="card-range" id="turb-range">Target: &lt; 4 NTU (WHO standard)</div>
+      <div class="card-bar"><div class="card-bar-fill" id="turb-bar" style="width:0%;background:var(--accent2)"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Readings</div>
+      <div><span class="card-value" id="reading-count">0</span><span class="card-unit">&nbsp;</span></div>
+      <div class="card-range">Total data points collected</div>
+      <div class="card-bar"><div class="card-bar-fill" id="count-bar" style="width:0%;background:#7a5af8"></div></div>
+    </div>
+  </div>
+
+  <!-- QUALITY + CONFIDENCE -->
+  <div class="mid-row">
+    <div class="quality-card">
+      <h3>PREDICTED QUALITY</h3>
+      <div id="quality-label" class="skeleton" style="color:#7a9ab0">Unknown</div>
+      <div class="prob-bars" id="prob-bars">
+        <div class="prob-row"><span class="prob-name">Excellent</span><div class="prob-track"><div class="prob-fill" id="p-Excellent" style="width:0%;background:#00e5a0"></div></div><span class="prob-num" id="pn-Excellent">0%</span></div>
+        <div class="prob-row"><span class="prob-name">Good</span><div class="prob-track"><div class="prob-fill" id="p-Good" style="width:0%;background:#00b4ff"></div></div><span class="prob-num" id="pn-Good">0%</span></div>
+        <div class="prob-row"><span class="prob-name">Fair</span><div class="prob-track"><div class="prob-fill" id="p-Fair" style="width:0%;background:#ff8800"></div></div><span class="prob-num" id="pn-Fair">0%</span></div>
+        <div class="prob-row"><span class="prob-name">Poor</span><div class="prob-track"><div class="prob-fill" id="p-Poor" style="width:0%;background:#ff4060"></div></div><span class="prob-num" id="pn-Poor">0%</span></div>
+      </div>
+    </div>
+    <div class="conf-card">
+      <h3>MODEL CONFIDENCE</h3>
+      <div><span id="conf-value" class="skeleton" style="color:#7a9ab0">--</span><span id="conf-pct">%</span></div>
+      <div id="conf-label">Awaiting prediction</div>
+    </div>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="charts">
+    <div class="chart-card">
+      <h3>TDS TREND (ppm)</h3>
+      <div class="chart-wrap"><canvas id="tdsChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>TURBIDITY TREND (NTU)</h3>
+      <div class="chart-wrap"><canvas id="turbChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- HISTORY TABLE -->
+  <div class="table-card">
+    <h3>READING HISTORY</h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th><th>TDS (ppm)</th><th>Turbidity (NTU)</th>
+            <th>Quality</th><th>Safe?</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="5" style="color:#4a6070;text-align:center;padding:20px">Waiting for data…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>AQUAWATCH v1.0 · NodeMCU TDS + TURBIDITY · FIREBASE REALTIME DB · RANDOM FOREST ML</footer>
+</div>
+
+<script>
+  // ✅ FIX: Use double curly braces so Jinja2 correctly injects the Python value
+  // Previously was: const POLL = { poll_interval } * 1000;  ← this is broken JS object syntax
+  const POLL = {{ poll_interval }} * 1000;
+
+  const QUALITY_COLORS = {
+    Excellent: '#00e5a0', Good: '#00b4ff', Fair: '#ff8800', Poor: '#ff4060', Unknown: '#7a9ab0'
+  };
+  const SAFE_LABELS = new Set(['Excellent', 'Good']);
+
+  // ── Chart setup ──────────────────────────────
+  const chartDefaults = {
+    type: 'line',
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#4a6070', font: { family: 'Share Tech Mono', size: 10 }, maxTicksLimit: 8 },
+             grid: { color: 'rgba(0,180,255,0.06)' } },
+        y: { ticks: { color: '#4a6070', font: { family: 'Share Tech Mono', size: 10 } },
+             grid: { color: 'rgba(0,180,255,0.06)' } }
+      }
+    }
+  };
+
+  function makeDataset(color) {
+    return {
+      data: [], borderColor: color, backgroundColor: color + '15',
+      borderWidth: 2, pointRadius: 2, pointHoverRadius: 4,
+      fill: true, tension: 0.4
+    };
+  }
+
+  const tdsChart  = new Chart(document.getElementById('tdsChart'),  {
+    ...chartDefaults,
+    data: { labels: [], datasets: [makeDataset('#00b4ff')] }
+  });
+  const turbChart = new Chart(document.getElementById('turbChart'), {
+    ...chartDefaults,
+    data: { labels: [], datasets: [makeDataset('#00ffcc')] }
+  });
+
+  // ── Update UI ────────────────────────────────
+  let readingCount = 0;
+
+  function updateDashboard(d) {
+    const safe  = d.safe;
+    const qual  = d.quality || 'Unknown';
+    const color = QUALITY_COLORS[qual] || '#7a9ab0';
+
+    // Banner
+    const banner = document.getElementById('status-banner');
+    const dot    = document.getElementById('status-dot');
+    banner.className = safe ? 'safe' : (qual === 'Fair' ? 'fair' : (qual === 'Unknown' ? 'unknown' : 'unsafe'));
+    dot.style.background = color;
+
+    document.getElementById('status-label').textContent =
+      safe ? '✔ WATER IS SAFE TO USE' : (qual === 'Fair' ? '⚠ WATER NEEDS TREATMENT' : '✘ WATER IS UNSAFE');
+    document.getElementById('status-label').style.color = color;
+    document.getElementById('status-sub').textContent =
+      `Quality: ${qual}  |  TDS: ${d.tds} ppm  |  Turbidity: ${d.turbidity} NTU`;
+    document.getElementById('status-time').textContent = d.timestamp || '--:--:--';
+
+    // ✅ FIX: Dynamically update connection badge based on live data from /api/latest
+    const connBadge = document.getElementById('conn-badge');
+    if (d.firebase_status === 'live') {
+      connBadge.textContent = '● FIREBASE LIVE';
+      connBadge.className = 'badge live';
+    } else {
+      connBadge.textContent = '⚠ DEMO MODE';
+      connBadge.className = 'badge demo';
+    }
+
+    // Sensor cards
+    const tdsEl  = document.getElementById('tds-val');
+    const turbEl = document.getElementById('turb-val');
+    tdsEl.textContent  = d.tds.toFixed(1);
+    turbEl.textContent = d.turbidity.toFixed(2);
+    tdsEl.classList.remove('skeleton');
+    turbEl.classList.remove('skeleton');
+
+    const tdsRatio  = Math.min(d.tds / 1200, 1);
+    const turbRatio = Math.min(d.turbidity / 30, 1);
+    const tdsColor  = tdsRatio < 0.4 ? '#00e5a0' : tdsRatio < 0.65 ? '#ffaa00' : '#ff4060';
+    const turbColor = turbRatio < 0.13 ? '#00e5a0' : turbRatio < 0.33 ? '#ffaa00' : '#ff4060';
+
+    tdsEl.style.color  = tdsColor;
+    turbEl.style.color = turbColor;
+    document.getElementById('tds-bar').style.width      = (tdsRatio  * 100) + '%';
+    document.getElementById('tds-bar').style.background   = tdsColor;
+    document.getElementById('turb-bar').style.width     = (turbRatio * 100) + '%';
+    document.getElementById('turb-bar').style.background  = turbColor;
+
+    // Reading count
+    readingCount++;
+    document.getElementById('reading-count').textContent = readingCount;
+    document.getElementById('count-bar').style.width = Math.min(readingCount / 50 * 100, 100) + '%';
+
+    // Quality + confidence
+    const ql = document.getElementById('quality-label');
+    ql.textContent = qual; ql.style.color = color; ql.classList.remove('skeleton');
+    const cv = document.getElementById('conf-value');
+    cv.textContent = d.confidence; cv.style.color = color; cv.classList.remove('skeleton');
+    document.getElementById('conf-label').textContent =
+      d.confidence >= 85 ? 'High confidence' : d.confidence >= 60 ? 'Moderate confidence' : 'Low confidence';
+
+    // Probability bars
+    const probs = d.probabilities || {};
+    ['Excellent','Good','Fair','Poor'].forEach(k => {
+      const val = probs[k] || 0;
+      document.getElementById('p-' + k).style.width  = val + '%';
+      document.getElementById('pn-' + k).textContent = val.toFixed(1) + '%';
+    });
+  }
+
+  function updateCharts(history) {
+    const labels   = history.map(h => h.time);
+    const tdsData  = history.map(h => h.tds);
+    const turbData = history.map(h => h.turbidity);
+
+    tdsChart.data.labels = labels;
+    tdsChart.data.datasets[0].data = tdsData;
+    if (history.length) {
+      const q = history[history.length - 1].quality;
+      tdsChart.data.datasets[0].borderColor = QUALITY_COLORS[q] || '#00b4ff';
+      tdsChart.data.datasets[0].backgroundColor = (QUALITY_COLORS[q] || '#00b4ff') + '15';
+    }
+    tdsChart.update();
+
+    turbChart.data.labels = labels;
+    turbChart.data.datasets[0].data = turbData;
+    turbChart.update();
+  }
+
+  function updateTable(history) {
+    const tbody = document.getElementById('history-body');
+    const rows  = [...history].reverse().slice(0, 20);
+    if (!rows.length) return;
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.time}</td>
+        <td style="color:${r.tds > 750 ? '#ff4060' : r.tds > 500 ? '#ffaa00' : '#00e5a0'}">${parseFloat(r.tds).toFixed(1)}</td>
+        <td style="color:${r.turbidity > 10 ? '#ff4060' : r.turbidity > 4 ? '#ffaa00' : '#00e5a0'}">${parseFloat(r.turbidity).toFixed(2)}</td>
+        <td><span class="tag ${r.quality}">${r.quality}</span></td>
+        <td class="${r.safe ? 'safe-tick' : 'unsafe-tick'}">${r.safe ? '✔ Safe' : '✘ Unsafe'}</td>
+      </tr>`).join('');
+  }
+
+  // ── Poll Flask API endpoints ─────────────────
+  async function fetchLatest() {
+    try {
+      const r = await fetch('/api/latest');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      updateDashboard(d);
+    } catch(e) {
+      console.warn('[AquaWatch] /api/latest error:', e);
+    }
+  }
+
+  async function fetchHistory() {
+    try {
+      const r = await fetch('/api/history');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const h = await r.json();
+      updateCharts(h);
+      updateTable(h);
+    } catch(e) {
+      console.warn('[AquaWatch] /api/history error:', e);
+    }
+  }
+
+  async function tick() {
+    await fetchLatest();
+    await fetchHistory();
+  }
+
+  // First call immediately, then repeat every POLL ms
+  tick();
+  setInterval(tick, POLL);
+</script>
+</body>
+</html>
